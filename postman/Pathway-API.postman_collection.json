@@ -1,0 +1,106 @@
+{
+  "info": {
+    "name": "Pathway API Starter",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fullName\":\"Keerthana Vinoth\",\"email\":\"keerthana@example.com\",\"password\":\"ChangeMe123!\"}"
+        }
+      }
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"keerthana@example.com\",\"password\":\"ChangeMe123!\"}"
+        }
+      }
+    },
+    {
+      "name": "Search jobs",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/jobs?q=java&mode=Remote"
+      }
+    },
+    {
+      "name": "List applications",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/applications"
+      }
+    },
+    {
+      "name": "Create application",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/applications",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"company\":\"Northstar Systems\",\"jobTitle\":\"Junior Java Developer\",\"jobUrl\":\"https://example.com/jobs\",\"location\":\"Remote, US\",\"workMode\":\"Remote\",\"status\":\"APPLIED\",\"appliedDate\":\"2026-10-21\",\"followUpDate\":\"2026-10-29\",\"notes\":\"Tailor resume before applying.\"}"
+        }
+      }
+    },
+    {
+      "name": "Dashboard stats",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/dashboard/stats"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ]
+}
