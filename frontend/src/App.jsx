@@ -95,7 +95,7 @@ function App() {
     async function loadApplications() {
       try {
         const response = await fetch(
-            'http://localhost:8080/api/tracked-applications'
+            'https://pathway-backend-t8al.onrender.com/api/tracked-applications'
         );
 
         if (!response.ok) {
@@ -176,7 +176,7 @@ function App() {
         if (search.trim()) params.set('q', search.trim())
 
         const response = await fetch(
-            `http://localhost:8080/api/jobs/remote?${params.toString()}`
+            `https://pathway-backend-t8al.onrender.com/api/jobs/remote?${params.toString()}`
         )
 
         if (!response.ok) {
@@ -456,7 +456,7 @@ function App() {
 
     try {
       const response = await fetch(
-          'http://localhost:8080/api/tracked-applications',
+          'https://pathway-backend-t8al.onrender.com/api/tracked-applications',
           {
             method: 'POST',
             headers: {
@@ -506,7 +506,7 @@ const submitManual = async (e) => {
 
   try {
     const response = await fetch(
-        'http://localhost:8080/api/tracked-applications',
+        'https://pathway-backend-t8al.onrender.com/api/tracked-applications',
         {
           method: 'POST',
           headers: {
@@ -556,7 +556,7 @@ const changeStatus = async (id, status) => {
 
   try {
     const response = await fetch(
-        `http://localhost:8080/api/tracked-applications/${id}`,
+        `https://pathway-backend-t8al.onrender.com/api/tracked-applications/${id}`,
         {
           method: 'PUT',
           headers: {
@@ -587,7 +587,7 @@ const changeStatus = async (id, status) => {
 const deleteApp = async (id) => {
   try {
     const response = await fetch(
-        `http://localhost:8080/api/tracked-applications/${id}`,
+        `https://pathway-backend-t8al.onrender.com/api/tracked-applications/${id}`,
         { method: 'DELETE' }
     );
 
