@@ -70,6 +70,15 @@ function App() {
   const [page, setPage] = useState('Overview')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setDebouncedSearch(search)
+  }, 500)
+
+  return () => clearTimeout(timer)
+}, [search])
   const [filter, setFilter] = useState('All')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('All')
 
@@ -173,7 +182,7 @@ function App() {
           page: String(jobPage)
         })
 
-        if (search.trim()) params.set('q', search.trim())
+        if (debouncedSearch.trim()) {   params.set('q', debouncedSearch.trim()) }
 
         const response = await fetch(
             `https://pathway-backend-t8al.onrender.com/api/jobs/remote?${params.toString()}`
@@ -341,7 +350,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [page, search, jobPage, jobReload])
+  }, [page, debouncedSearch, jobPage, jobReload])
 
   const nav = [
     {
