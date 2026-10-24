@@ -871,7 +871,7 @@ const deleteApp = async (id) => {
                       <div className="eyebrow">
                         <span className="eyebrow-dot" />YOUR JOB SEARCH, IN ONE PLACE
                       </div>
-                      <h1>Good morning, Keerthana <span>✦</span></h1>
+                      <h1>Hello, Users <span>✦</span></h1>
                       <p className="subtitle">
                         A little progress every day adds up. Here's your journey so far.
                       </p>
