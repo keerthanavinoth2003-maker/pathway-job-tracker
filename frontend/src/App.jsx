@@ -67,6 +67,74 @@ function formatPostedDate(value) {
 }
 
 function App() {
+    const [token, setToken] = useState(
+    () => localStorage.getItem('pathway-token') || ''
+  );
+  const [authMode, setAuthMode] = useState('login');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    try {
+      const endpoint =
+        authMode === 'signup' ? '/api/auth/register' : '/api/auth/login';
+
+      const payload =
+        authMode === 'signup'
+          ? {
+              fullName: authName.trim(),
+              email: authEmail.trim(),
+              password: authPassword
+            }
+          : {
+              email: authEmail.trim(),
+              password: authPassword
+            };
+
+      const response = await fetch(
+        `https://pathway-backend-t8al.onrender.com${endpoint}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Login failed. Check your details.');
+      }
+
+      if (!data.token) {
+        throw new Error('The server did not return an authentication token.');
+      }
+
+      localStorage.setItem('pathway-token', data.token);
+      setToken(data.token);
+      setAuthName(data.fullName || '');
+      setAuthError('');
+    } catch (error) {
+      setAuthError(error.message || 'Something went wrong. Please try again.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('pathway-token');
+    setToken('');
+    setAuthPassword('');
+    setAuthMode('login');
+    setPage('Overview');
+  };
   const [page, setPage] = useState('Overview')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -754,7 +822,8 @@ const deleteApp = async (id) => {
   }
 
   return (
-      <div className="app-shell">
+      {!token ? (   <div className="auth-page">     <form className="auth-card" onSubmit={handleAuth}>       <div className="auth-brand">         <div className="auth-logo">           <Sparkles size={22} />         </div>         <h1>pathway</h1>         <p>Your next chapter starts here.</p>       </div>        <div className="auth-tabs">         <button           type="button"           className={authMode === 'login' ? 'active' : ''}           onClick={() => {             setAuthMode('login');             setAuthError('');           }}         >           Login         </button>          <button           type="button"           className={authMode === 'signup' ? 'active' : ''}           onClick={() => {             setAuthMode('signup');             setAuthError('');           }}         >           Sign up         </button>       </div>        {authMode === 'signup' && (         <label className="field-label">           Full name           <input             required             value={authName}             onChange={e => setAuthName(e.target.value)}             placeholder="Your full name"           />         </label>       )}        <label className="field-label">         Email address         <input           type="email"           required           value={authEmail}           onChange={e => setAuthEmail(e.target.value)}           placeholder="you@example.com"         />       </label>        <label className="field-label">         Password         <input           type="password"           required           minLength={6}           value={authPassword}           onChange={e => setAuthPassword(e.target.value)}           placeholder="Enter your password"         />       </label>        {authError && <p className="auth-error">{authError}</p>}        <button         className="auth-submit"         type="submit"         disabled={authLoading}       >         {authLoading           ? 'Please wait...'           : authMode === 'signup'             ? 'Create account'             : 'Login to Pathway'}       </button>        <p className="auth-switch">         {authMode === 'login'           ? "Don't have an account? "           : 'Already have an account? '}         <button           type="button"           onClick={() => {             setAuthMode(authMode === 'login' ? 'signup' : 'login');             setAuthError('');           }}         >           {authMode === 'login' ? 'Sign up' : 'Login'}         </button>       </p>     </form>   </div> ) : (   <div className="app-shell">
+        
         <style>{`
         @keyframes pathwayPulse {
           0%, 100% { opacity: .55; }
@@ -849,6 +918,9 @@ const deleteApp = async (id) => {
               >
                 <Bell size={18} /><i />
               </button>
+             <button className="soft-btn" onClick={handleLogout}>
+  Logout
+</button>
               <div className="top-avatar">KV</div>
             </div>
           </header>
