@@ -14,6 +14,11 @@ const seedApps = [
 ]
 const statusClass = s => s.toLowerCase().replaceAll(' ', '-')
 function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('pathway-token') || '')
+  const [authMode, setAuthMode] = useState('login')
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' })
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
   const [page, setPage] = useState('Overview')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -118,19 +123,88 @@ function App() {
     setAnalysis({ score: req.length ? Math.round(match.length / req.length * 100) : 0, match, missing })
   }
   const openPage = p => { setPage(p); setMobileOpen(false); setNotice('') }
+  const handleAuth = async (e) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
+    try {
+      const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
+      const payload = authMode === 'register'
+        ? { name: authForm.name.trim(), email: authForm.email.trim(), password: authForm.password }
+        : { email: authForm.email.trim(), password: authForm.password }
+      const response = await fetch(`https://pathway-backend-t8al.onrender.com${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.message || data.error || (authMode === 'register' ? 'Could not create your account.' : 'Invalid email or password.'))
+      }
+      let receivedToken = data.token || data.accessToken || data.jwt || data.access_token
+      // Some register endpoints create the account but do not return a JWT; sign in immediately in that case.
+      if (!receivedToken && authMode === 'register') {
+        const loginResponse = await fetch('https://pathway-backend-t8al.onrender.com/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authForm.email.trim(), password: authForm.password }),
+        })
+        const loginData = await loginResponse.json().catch(() => ({}))
+        if (loginResponse.ok) receivedToken = loginData.token || loginData.accessToken || loginData.jwt || loginData.access_token
+      }
+      if (!receivedToken) throw new Error('The server did not return a login token. Check the backend authentication response format.')
+      localStorage.setItem('pathway-token', receivedToken)
+      setToken(receivedToken)
+      setPage('Overview')
+      setAuthForm({ name: '', email: authForm.email, password: '' })
+    } catch (error) {
+      setAuthError(error.message || 'Could not connect to the server. Please try again.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+  const logout = () => {
+    localStorage.removeItem('pathway-token')
+    setToken('')
+    setAuthMode('login')
+    setAuthForm({ name: '', email: '', password: '' })
+    setAuthError('')
+    setPage('Overview')
+  }
+  if (!token) return <div className="auth-page">
+    <section className="auth-card">
+      <div className="auth-brand"><span className="auth-logo"><Sparkles size={22}/></span><span>pathway</span></div>
+      <div className="auth-eyebrow">YOUR NEXT CHAPTER STARTS HERE</div>
+      <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+      <p className="auth-subtitle">{authMode === 'login' ? 'Sign in to continue organizing your job search.' : 'Create your personal workspace and keep your job search organized.'}</p>
+      <div className="auth-tabs">
+        <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError('') }}>Log in</button>
+        <button type="button" className={authMode === 'register' ? 'active' : ''} onClick={() => { setAuthMode('register'); setAuthError('') }}>Sign up</button>
+      </div>
+      <form onSubmit={handleAuth}>
+        {authMode === 'register' && <label>Full name<input autoComplete="name" value={authForm.name} onChange={e => setAuthForm({ ...authForm, name: e.target.value })} placeholder="Keerthana Vinoth" required /></label>}
+        <label>Email address<input type="email" autoComplete="email" value={authForm.email} onChange={e => setAuthForm({ ...authForm, email: e.target.value })} placeholder="you@example.com" required /></label>
+        <label>Password<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} value={authForm.password} onChange={e => setAuthForm({ ...authForm, password: e.target.value })} placeholder="Enter your password" minLength={6} required /></label>
+        {authError && <p className="auth-error">{authError}</p>}
+        <button className="auth-submit" type="submit" disabled={authLoading}>{authLoading ? 'Please wait…' : authMode === 'login' ? 'Log in to Pathway' : 'Create account'}</button>
+      </form>
+      <p className="auth-switch">{authMode === 'login' ? 'New to Pathway? ' : 'Already have an account? '}<button type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError('') }}>{authMode === 'login' ? 'Create an account' : 'Log in instead'}</button></p>
+      <p className="auth-footer">PATHWAY · YOUR PERSONAL JOB SEARCH WORKSPACE</p>
+    </section>
+  </div>
   return <div className="app-shell">
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><div><b>pathway</b><span>YOUR NEXT CHAPTER</span></div><button className="close-menu" onClick={() => setMobileOpen(false)}><X size={18}/></button></div>
       <div className="workspace-switch"><div className="workspace-avatar">K</div><div><b>Keerthana's space</b><span>Personal workspace</span></div><ChevronDown size={15}/></div>
       {nav.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => <button key={item.name} className={`nav-item ${page === item.name ? 'active' : ''}`} onClick={() => openPage(item.name)}><item.icon size={18}/><span>{item.name}</span>{item.name === 'My applications' && <em>{apps.length}</em>}</button>)}</div>)}
-      <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><Sparkles size={16}/></div><b>Small steps add up.</b><p>Every application brings you closer to the right opportunity.</p><button onClick={() => openPage('Find jobs')}>Explore jobs <ArrowUpRight size={14}/></button></div><div className="profile-row"><div className="profile-avatar">KV</div><div><b>Keerthana Vinoth</b><span>Job seeker</span></div><MoreHorizontal size={18}/></div></div>
+      <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><Sparkles size={16}/></div><b>Small steps add up.</b><p>Every application brings you closer to the right opportunity.</p><button onClick={() => openPage('Find jobs')}>Explore jobs <ArrowUpRight size={14}/></button></div><div className="profile-row"><div className="profile-avatar">KV</div><div><b>Keerthana Vinoth</b><span>Job seeker</span></div><button className="logout-btn" title="Log out" onClick={logout}>Log out</button></div></div>
     </aside>
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={21}/></button><div className="crumb">Workspace <span>/</span> <b>{page}</b></div><div className="top-actions"><div className="top-date">Tuesday, October 21</div><button className="icon-btn" title="Notifications" onClick={() => setNotice('You are all caught up.')}><Bell size={18}/><i/></button><div className="top-avatar">KV</div></div></header>
       <div className="page-content">
         {notice && <div className="notice"><CircleCheck size={17}/>{notice}<button onClick={() => setNotice('')}><X size={15}/></button></div>}
-        {page === 'Overview' && <><div className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> YOUR JOB SEARCH, IN ONE PLACE</div><h1>Good morning, Keerthana <span>✦</span></h1><p className="subtitle">A little progress every day adds up. Here's your journey so far.</p></div><button className="primary-btn" onClick={() => setShowAdd(true)}><Plus size={17}/> Add application</button></div>
+        {page === 'Overview' && <><div className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> YOUR JOB SEARCH, IN ONE PLACE</div><h1>Welcome to Pathway<span>✦</span></h1><p className="subtitle">A little progress every day adds up. Here's your journey so far.</p></div><button className="primary-btn" onClick={() => setShowAdd(true)}><Plus size={17}/> Add application</button></div>
           <section className="stats-grid">
             <Stat icon={BriefcaseBusiness} label="Applications sent" value={stat.total} meta="Your tracked opportunities" tone="violet" />
             <Stat icon={CalendarDays} label="Interviews" value={stat.interviews} meta="Keep preparing" tone="blue" />
