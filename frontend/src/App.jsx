@@ -48,7 +48,7 @@ function App() {
       setJobsLoading(true)
       setJobsError('')
       try {
-        const response = await fetch('https://pathway-backend-t8al.onrender.com/api/jobs/remote?worldwide=true&page=1')
+        const response = await const params = new URLSearchParams({   worldwide: 'true',   page: '1', });  if (search.trim()) {   params.set('q', search.trim()); }  const response = await fetch(   `https://pathway-backend-t8al.onrender.com/api/jobs/remote?${params.toString()}` );
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const data = await response.json()
         const rawJobs = Array.isArray(data) ? data : (data.jobs || [])
