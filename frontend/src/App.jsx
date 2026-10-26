@@ -130,7 +130,7 @@ function App() {
     try {
       const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
       const payload = authMode === 'register'
-        ? { name: authForm.name.trim(), email: authForm.email.trim(), password: authForm.password }
+        ? { fullName: authForm.name.trim(), email: authForm.email.trim(), password: authForm.password }
         : { email: authForm.email.trim(), password: authForm.password }
       const response = await fetch(`https://pathway-backend-t8al.onrender.com${endpoint}`, {
         method: 'POST',
