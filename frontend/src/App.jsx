@@ -11,19 +11,39 @@ import {
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const initialJobs = []
-const seedApps = [
-  { id: 101, company: 'Linear Labs', title: 'Junior Java Developer', location: 'Remote, US', status: 'Interview', appliedDate: '2026-10-15', followUpDate: '2026-10-23', color: 'lavender' },
-  { id: 102, company: 'Vertex Cloud', title: 'Backend Engineer I', location: 'New York, NY', status: 'Applied', appliedDate: '2026-10-17', followUpDate: '2026-10-24', color: 'mint' },
-  { id: 103, company: 'Morrow Tech', title: 'Associate Software Engineer', location: 'Remote, US', status: 'Assessment', appliedDate: '2026-10-18', followUpDate: '', color: 'blue' },
-]
-const statusClass = s => s.toLowerCase().replaceAll(' ', '-')
+const API_BASE = 'https://pathway-backend-t8al.onrender.com'
+const statusClass = s => String(s || 'Applied').toLowerCase().replaceAll(' ', '-')
+const toUiApplication = (a, index = 0) => ({
+  id: a.id,
+  company: a.company || '',
+  title: a.jobTitle || a.title || '',
+  jobUrl: a.jobUrl || '',
+  location: a.location || '',
+  workMode: a.workMode || '',
+  status: String(a.status || 'APPLIED').replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()),
+  appliedDate: a.appliedDate || '',
+  followUpDate: a.followUpDate || '',
+  notes: a.notes || '',
+  color: ['lavender', 'mint', 'blue', 'peach'][index % 4],
+})
+const toApiApplication = a => ({
+  company: a.company,
+  jobTitle: a.title || a.jobTitle,
+  jobUrl: a.jobUrl || null,
+  location: a.location || null,
+  workMode: a.workMode || null,
+  status: String(a.status || 'Applied').toUpperCase().replaceAll(' ', '_'),
+  appliedDate: a.appliedDate || new Date().toISOString().slice(0, 10),
+  followUpDate: a.followUpDate || null,
+  notes: a.notes || null,
+})
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('pathway-token') || '')
   const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' })
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const [page, setPage] = useState('Overview')
+  const [page, setPage] = useState(() => localStorage.getItem('pathway-current-page') || 'Overview')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
@@ -31,7 +51,8 @@ function App() {
   const [jobsLoading, setJobsLoading] = useState(false)
   const [jobsError, setJobsError] = useState('')
   const [jobsRefresh, setJobsRefresh] = useState(0)
-  const [apps, setApps] = useState(seedApps)
+  const [apps, setApps] = useState([])
+  const [appsLoading, setAppsLoading] = useState(false)
   const [saved, setSaved] = useState([])
   const [notice, setNotice] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -40,6 +61,51 @@ function App() {
   const [jobDescription, setJobDescription] = useState('Java Spring Boot REST API MySQL Git JUnit Docker')
 
   const [analysis, setAnalysis] = useState(null)
+
+  // Remember the current page so browser refresh keeps the user in the same section.
+  useEffect(() => {
+    localStorage.setItem('pathway-current-page', page)
+  }, [page])
+
+  // Load the signed-in user's saved applications from the backend database.
+  useEffect(() => {
+    if (!token) { setApps([]); return }
+    let cancelled = false
+    const loadApplications = async () => {
+      setAppsLoading(true)
+      try {
+        const response = await fetch(`${API_BASE}/api/applications`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Your session expired. Please log in again.')
+        }
+        if (!response.ok) throw new Error(`Could not load applications (HTTP ${response.status}).`)
+        const data = await response.json()
+        if (!cancelled) setApps((Array.isArray(data) ? data : []).map(toUiApplication))
+      } catch (error) {
+        if (!cancelled) setNotice(error.message || 'Could not load saved applications from the server.')
+      } finally {
+        if (!cancelled) setAppsLoading(false)
+      }
+    }
+    loadApplications()
+    return () => { cancelled = true }
+  }, [token])
+
+  const saveApplicationToServer = async (application, method = 'POST', id = null) => {
+    const response = await fetch(`${API_BASE}/api/applications${id != null ? `/${id}` : ''}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(toApiApplication(application)),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.message || body.error || `Could not save application (HTTP ${response.status}).`)
+    }
+    if (response.status === 204) return null
+    return response.json()
+  }
 
   // Fetch jobs whenever Find Jobs opens or the search keyword changes.
   useEffect(() => {
@@ -130,19 +196,43 @@ function App() {
     return (!q || `${j.title} ${j.company} ${j.location} ${j.description}`.toLowerCase().includes(q)) && (filter === 'All' || j.mode.toLowerCase() === filter.toLowerCase())
   }), [jobs, search, filter])
   const stat = { total: apps.length, interviews: apps.filter(a => a.status === 'Interview').length, offers: apps.filter(a => a.status === 'Offer').length, response: apps.length ? Math.round(apps.filter(a => ['Interview','Offer','Rejected','Assessment'].includes(a.status)).length / apps.length * 100) : 0 }
-  const addApp = (job) => {
+  const addApp = async (job) => {
     if (apps.some(a => a.company === job.company && a.title === job.title)) { setNotice('This job is already in your applications.'); return }
-    setApps([{ id: Date.now(), company: job.company, title: job.title, location: job.location, status: 'Applied', appliedDate: new Date().toISOString().slice(0,10), followUpDate: '', color: job.tone || 'lavender' }, ...apps])
-    setNotice(`${job.title} at ${job.company} added to your applications.`)
+    const application = { company: job.company, title: job.title, jobUrl: job.applyUrl || '', location: job.location || '', workMode: job.mode || '', status: 'Applied', appliedDate: new Date().toISOString().slice(0,10), followUpDate: '', color: job.tone || 'lavender' }
+    try {
+      const savedApplication = await saveApplicationToServer(application)
+      setApps(current => [toUiApplication(savedApplication || application), ...current])
+      setNotice(`${job.title} at ${job.company} saved to your account.`)
+    } catch (error) { setNotice(error.message || 'Could not save this job. Please log in again and retry.') }
   }
-  const submitManual = (e) => {
+  const submitManual = async (e) => {
     e.preventDefault()
     if (!form.company.trim() || !form.title.trim()) return
-    setApps([{ ...form, id: Date.now(), color: 'lavender', followUpDate: '' }, ...apps])
-    setForm({ company: '', title: '', location: 'Remote, US', status: 'Applied', appliedDate: new Date().toISOString().slice(0,10) })
-    setShowAdd(false); setNotice('Application added successfully.')
+    try {
+      const savedApplication = await saveApplicationToServer({ ...form, company: form.company.trim(), title: form.title.trim(), followUpDate: '' })
+      setApps(current => [toUiApplication(savedApplication || form), ...current])
+      setForm({ company: '', title: '', location: 'Remote, US', status: 'Applied', appliedDate: new Date().toISOString().slice(0,10) })
+      setShowAdd(false); setNotice('Application saved permanently to your account.')
+    } catch (error) { setNotice(error.message || 'Could not save application. Please retry.') }
   }
-  const changeStatus = (id, status) => setApps(apps.map(a => a.id === id ? { ...a, status } : a))
+  const changeStatus = async (id, status) => {
+    const current = apps.find(a => a.id === id)
+    if (!current) return
+    const updated = { ...current, status }
+    try {
+      const savedApplication = await saveApplicationToServer(updated, 'PUT', id)
+      setApps(items => items.map(a => a.id === id ? toUiApplication(savedApplication || updated) : a))
+      setNotice('Application status updated.')
+    } catch (error) { setNotice(error.message || 'Could not update application status.') }
+  }
+  const deleteApplication = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/applications/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      if (!response.ok) throw new Error(`Could not delete application (HTTP ${response.status}).`)
+      setApps(items => items.filter(a => a.id !== id))
+      setNotice('Application removed.')
+    } catch (error) { setNotice(error.message || 'Could not remove application.') }
+  }
   const handleResumeFile = async (event) => {
     const input = event.target
     const file = input.files?.[0]
@@ -294,11 +384,11 @@ function App() {
           <section className="panel bottom-panel"><div className="panel-head"><div><h2>Your weekly rhythm</h2><p>A snapshot of the activity you have logged.</p></div><span className="period-pill">Last 7 days</span></div><div className="activity-chart">{['M','T','W','T','F','S','S'].map((d,i)=><div className="bar-column" key={i}><span className="bar-value">{[1,3,2,4,2,1,0][i]}</span><div className="bar-track"><div className={`bar-fill bar-${i}`} style={{height:`${[25,65,45,88,48,22,5][i]}%`}}/></div><span className="bar-day">{d}</span></div>)}</div><div className="chart-foot"><span><i className="legend-dot"/> Activity is illustrative until connected to live data.</span><button className="text-btn" onClick={() => openPage('Analytics')}>View insights <ArrowUpRight size={15}/></button></div></section>
         </>}
         {page === 'Find jobs' && <><PageTitle eyebrow="OPPORTUNITIES" title="Find your next opportunity" subtitle="Search current remote vacancies from India and international employers."/><div className="search-tools"><div className="search-field"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Job title, company, or keyword"/></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All work modes</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="On-site">On-site</option></select><button className="soft-btn" onClick={()=>{setSearch('');setFilter('All')}}><Filter size={16}/> Clear</button></div>{jobsLoading && <div className="listing-note">Loading real job vacancies…</div>}{jobsError && <div className="listing-note"><CircleAlert size={16}/>{jobsError}<button className="soft-btn" onClick={()=>{setPage('Overview');setTimeout(()=>setPage('Find jobs'),0)}}>Try again</button></div>}<div className="job-grid">{filteredJobs.map(j=><article className="job-card" key={j.id}><div className="job-card-top"><div className={`company-logo ${j.tone}`}>{j.initials}</div><button className={`bookmark-btn ${saved.includes(j.id)?'saved':''}`} onClick={()=>setSaved(saved.includes(j.id)?saved.filter(x=>x!==j.id):[...saved,j.id])}><Bookmark size={17} fill={saved.includes(j.id)?'currentColor':'none'}/></button></div><span className="job-company">{j.company}</span><h3>{j.title}</h3><div className="job-meta"><span><MapPin size={14}/>{j.location}</span><span><Clock3 size={14}/>{j.type}</span></div><div className="job-tags"><span>{j.mode}</span><span>{j.salary}</span></div><p className="job-description">{j.description}</p><div className="job-card-foot"><button className="primary-btn small" onClick={()=>addApp(j)}><Plus size={15}/> Track job</button>{j.applyUrl && <a className="primary-btn small apply-now-btn" href={j.applyUrl} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Apply Now</a>}</div></article>)}</div><div className="load-jobs-bottom"><button className="primary-btn" onClick={()=>setJobsRefresh(v=>v+1)} disabled={jobsLoading}><Search size={16}/>{jobsLoading ? 'Loading jobs…' : 'Load Jobs'}</button></div>{!jobsLoading && !jobsError && filteredJobs.length===0&&<Empty title="No matching roles" text={jobs.length ? "Try another keyword." : "No listings were returned by the job source. Try again later."} action={()=>{setSearch('');setFilter('All')}} actionLabel="Reset search"/>}</>}
-        {page === 'My applications' && <><PageTitle eyebrow="YOUR PIPELINE" title="My applications" subtitle="Every opportunity, organized in one calm workspace." action={<button className="primary-btn" onClick={()=>setShowAdd(true)}><Plus size={17}/> Add application</button>}/><div className="pipeline-strip">{['Saved','Applied','Assessment','Interview','Offer','Rejected'].map(s=><button className={`pipeline-chip ${filter===s?'selected':''}`} key={s} onClick={()=>setFilter(filter===s?'All':s)}>{s}<b>{apps.filter(a=>a.status===s).length}</b></button>)}</div><div className="panel table-panel"><div className="panel-head"><div><h2>All tracked applications</h2><p>{apps.length} opportunities in your pipeline</p></div><button className="soft-btn" onClick={()=>setFilter('All')}><Filter size={16}/> Reset filters</button></div><ApplicationTable apps={apps.filter(a=>filter==='All'||['Remote','Hybrid','On-site'].includes(filter)?(filter==='All'||a.location?.includes(filter)||a.status===filter):a.status===filter)} changeStatus={changeStatus} onDelete={id=>setApps(apps.filter(a=>a.id!==id))} full/></div></>}
+        {page === 'My applications' && <><PageTitle eyebrow="YOUR PIPELINE" title="My applications" subtitle="Every opportunity, organized in one calm workspace." action={<button className="primary-btn" onClick={()=>setShowAdd(true)}><Plus size={17}/> Add application</button>}/><div className="pipeline-strip">{['Saved','Applied','Assessment','Interview','Offer','Rejected'].map(s=><button className={`pipeline-chip ${filter===s?'selected':''}`} key={s} onClick={()=>setFilter(filter===s?'All':s)}>{s}<b>{apps.filter(a=>a.status===s).length}</b></button>)}</div><div className="panel table-panel"><div className="panel-head"><div><h2>All tracked applications</h2><p>{appsLoading ? 'Loading saved applications…' : `${apps.length} opportunities in your pipeline`}</p></div><button className="soft-btn" onClick={()=>setFilter('All')}><Filter size={16}/> Reset filters</button></div><ApplicationTable apps={apps.filter(a=>filter==='All'||['Remote','Hybrid','On-site'].includes(filter)?(filter==='All'||a.location?.includes(filter)||a.status===filter):a.status===filter)} changeStatus={changeStatus} onDelete={deleteApplication} full/></div></>}
         {page === 'Interviews' && <><PageTitle eyebrow="PREPARE WITH CONFIDENCE" title="Interview planner" subtitle="Keep dates, preparation notes, and next steps in one place."/><div className="interview-layout"><section className="panel"><div className="panel-head"><div><h2>Interview-stage applications</h2><p>Update a status in My applications to manage your pipeline.</p></div></div>{apps.filter(a=>a.status==='Interview').map(a=><div className="interview-card" key={a.id}><div className="company-logo lavender">{a.company[0]}</div><div className="interview-main"><b>{a.company}</b><span>{a.title}</span><small><CalendarDays size={13}/> Follow-up: {a.followUpDate||'Set a date in your notes'}</small></div><button className="soft-btn" onClick={()=>setNotice(`Preparation checklist: review the job description, practice Java fundamentals, Spring Boot, SQL, REST APIs, and prepare 2 project stories for ${a.company}.`)}>Prep checklist</button></div>)}{!apps.some(a=>a.status==='Interview')&&<Empty title="No interviews scheduled yet" text="When an application moves to Interview, you can prepare for it here." action={()=>openPage('My applications')} actionLabel="View applications"/>}</section><aside className="panel prep-panel"><div className="mini-icon"><Sparkles size={18}/></div><h2>Your interview warm-up</h2><p>Before each interview, spend a little time on:</p>{['Read the job description carefully','Practice Java and Spring Boot basics','Review one project end-to-end','Prepare thoughtful questions'].map(x=><div className="check-row" key={x}><CircleCheck size={16}/><span>{x}</span></div>)}</aside></div></>}
         {page === 'Resume & ATS' && <><PageTitle eyebrow="READY FOR THE NEXT STEP" title="Resume readiness" subtitle="Compare resume text with a job description and find useful gaps."/><div className="resume-layout"><section className="panel resume-form"><div className="panel-head"><div><h2>Check your resume keywords</h2><p>Upload a PDF or text resume, or paste your resume content below.</p></div><FileCheck2 size={21} color="#6759e8"/></div><label className="field-label">Upload resume (PDF, TXT, MD)<input type="file" accept=".pdf,application/pdf,.txt,.md,.text,text/plain,text/markdown" onChange={handleResumeFile} /></label><label className="field-label">Resume text<textarea value={resumeText} onChange={e=>setResumeText(e.target.value)} placeholder="Paste your resume text here — skills, projects, experience, education..." rows={8}/></label><label className="field-label">Target job description<textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows={5}/></label><button className="primary-btn" onClick={runAnalysis}><SearchCheck size={17}/> Analyze keywords</button><p className="disclaimer">This is a transparent keyword heuristic, not a real ATS score or hiring prediction. Only include skills you genuinely have.</p></section><section className="panel resume-result"><div className="panel-head"><div><h2>Analysis report</h2><p>Your results appear here after analysis.</p></div></div>{analysis?<><div className="score-row"><div className="score-circle" style={{'--score':`${analysis.score}%`}}><div><b>{analysis.score}</b><span>/ 100</span></div></div><div><b>Keyword overlap</b><p>{analysis.match.length} matching keyword(s) found.</p></div></div><h3 className="result-heading">Matched keywords</h3><div className="keyword-list">{analysis.match.length?analysis.match.map(x=><span className="keyword good" key={x}>{x}</span>):<span className="muted">No matches yet.</span>}</div><h3 className="result-heading">Skills to review</h3><div className="keyword-list">{analysis.missing.length?analysis.missing.map(x=><span className="keyword missing" key={x}>{x}</span>):<span className="muted">No missing tracked keywords.</span>}</div></>:<div className="result-empty"><div className="empty-illustration"><SearchCheck size={26}/></div><b>Your report will appear here</b><p>Add resume text and a target job description to see keyword overlap.</p></div>}</section></div></>}
         {page === 'Analytics' && <><PageTitle eyebrow="YOUR PROGRESS" title="Search insights" subtitle="Understand the activity you have recorded in Pathway."/><div className="stats-grid analytics-stats"><Stat icon={BriefcaseBusiness} label="Tracked jobs" value={stat.total} meta="All statuses" tone="violet"/><Stat icon={CalendarDays} label="Interviews" value={stat.interviews} meta="Interview stage" tone="blue"/><Stat icon={TrendingUp} label="Offers" value={stat.offers} meta="Offer stage" tone="green"/><Stat icon={ChartNoAxesCombined} label="Response activity" value={`${stat.response}%`} meta="Non-pending statuses" tone="peach"/></div><section className="panel analytics-panel"><div className="panel-head"><div><h2>Status breakdown</h2><p>Based on your current application records.</p></div></div>{['Saved','Applied','Assessment','Interview','Offer','Rejected','Withdrawn'].map(s=><div className="progress-row" key={s}><span>{s}</span><div className="progress-track"><div className={`progress-fill ${statusClass(s)}`} style={{width:`${apps.length?apps.filter(a=>a.status===s).length/apps.length*100:0}%`}}/></div><b>{apps.filter(a=>a.status===s).length}</b></div>)}</section></>}
-        {page === 'Settings' && <><PageTitle eyebrow="YOUR WORKSPACE" title="Settings" subtitle="A few useful preferences for your personal job-search space."/><section className="panel settings-panel"><div className="settings-row"><div><b>Workspace profile</b><p>Personal workspace for Keerthana Vinoth</p></div><span className="period-pill">Personal</span></div><div className="settings-row"><div><b>Data & privacy</b><p>This prototype stores demo state in the current browser session only.</p></div><span className="soft-status">Demo mode</span></div><div className="settings-row"><div><b>Job source</b><p>Remote job listings are requested from the Pathway backend. Availability depends on the backend and its configured job source.</p></div><span className="soft-status">Backend source</span></div><div className="settings-row"><div><b>Application data</b><p>Clear local demo records and start fresh.</p></div><button className="soft-btn danger" onClick={()=>{setApps([]);setNotice('Demo application list cleared.')}}>Clear applications</button></div></section></>}
+        {page === 'Settings' && <><PageTitle eyebrow="YOUR WORKSPACE" title="Settings" subtitle="A few useful preferences for your personal job-search space."/><section className="panel settings-panel"><div className="settings-row"><div><b>Workspace profile</b><p>Personal workspace for Keerthana Vinoth</p></div><span className="period-pill">Personal</span></div><div className="settings-row"><div><b>Data & privacy</b><p>Your applications are saved to your account in the backend database.</p></div><span className="soft-status">Demo mode</span></div><div className="settings-row"><div><b>Job source</b><p>Remote job listings are requested from the Pathway backend. Availability depends on the backend and its configured job source.</p></div><span className="soft-status">Backend source</span></div><div className="settings-row"><div><b>Application data</b><p>Remove tracked applications from your account.</p></div><button className="soft-btn danger" onClick={async()=>{for (const a of [...apps]) await deleteApplication(a.id)}}>Clear applications</button></div></section></>}
       </div>
       <footer className="footer"><span>© 2026 Pathway</span><span>Made for the next chapter <span className="footer-heart">✦</span></span><span>Organize your search. Own your story.</span></footer>
     </main>
