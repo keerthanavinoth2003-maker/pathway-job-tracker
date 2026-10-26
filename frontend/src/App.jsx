@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   LayoutDashboard, Search, BriefcaseBusiness, CalendarDays, ChartNoAxesCombined,
   FileCheck2, Settings, Bell, Plus, ArrowUpRight, MapPin, Clock3, MoreHorizontal,
   ChevronDown, Filter, ExternalLink, Sparkles, CircleCheck, CircleAlert, Menu,
   X, Bookmark, SearchCheck, TrendingUp, ClipboardList
 } from 'lucide-react'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const initialJobs = []
 const seedApps = [
@@ -116,24 +120,55 @@ function App() {
     setShowAdd(false); setNotice('Application added successfully.')
   }
   const changeStatus = (id, status) => setApps(apps.map(a => a.id === id ? { ...a, status } : a))
-  const handleResumeFile = (event) => {
-    const file = event.target.files?.[0]
+  const handleResumeFile = async (event) => {
+    const input = event.target
+    const file = input.files?.[0]
     if (!file) return
-    const allowed = ['.txt', '.md', '.text']
+
     const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-    if (!allowed.includes(extension)) {
-      setNotice('Please upload a .txt, .md, or .text resume file. You can also paste your resume text below.')
-      event.target.value = ''
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      setResumeText(String(reader.result || ''))
+    const allowedTextFiles = ['.txt', '.md', '.text']
+
+    try {
+      let extractedText = ''
+
+      if (extension === '.pdf' || file.type === 'application/pdf') {
+        // Extract selectable text from each page of the PDF in the browser.
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise
+        const pageTexts = []
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          const page = await pdf.getPage(pageNumber)
+          const content = await page.getTextContent()
+          const pageText = content.items
+            .map(item => ('str' in item ? item.str : ''))
+            .filter(Boolean)
+            .join(' ')
+          pageTexts.push(pageText)
+        }
+
+        extractedText = pageTexts.join('\n\n').trim()
+        if (!extractedText) {
+          setNotice('This PDF has no selectable text. It may be a scanned image; please use a text-based PDF or paste the resume text manually.')
+          return
+        }
+      } else if (allowedTextFiles.includes(extension)) {
+        extractedText = await file.text()
+      } else {
+        setNotice('Please upload a PDF, TXT, MD, or TEXT resume file.')
+        return
+      }
+
+      setResumeText(extractedText)
       setAnalysis(null)
-      setNotice(`Resume loaded: ${file.name}`)
+      setNotice(`Resume loaded successfully: ${file.name}`)
+    } catch (error) {
+      console.error('Resume file reading failed:', error)
+      setNotice('Could not read this resume file. Try another PDF or paste the resume text manually.')
+    } finally {
+      // Allow choosing the same file again if needed.
+      input.value = ''
     }
-    reader.onerror = () => setNotice('Could not read that file. Please try again or paste the resume text.')
-    reader.readAsText(file)
   }
   const runAnalysis = () => {
     const known = ['java','spring boot','spring','mysql','postgresql','rest api','git','docker','junit','mockito','react','javascript','aws','microservices','sql','python','agile','maven']
@@ -238,7 +273,7 @@ function App() {
         {page === 'Find jobs' && <><PageTitle eyebrow="OPPORTUNITIES" title="Find your next opportunity" subtitle="Search current remote vacancies from India and international employers."/><div className="search-tools"><div className="search-field"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Job title, company, or keyword"/></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option>All</option><option>Remote</option></select><button className="soft-btn" onClick={()=>{setSearch('');setFilter('All')}}><Filter size={16}/> Clear</button></div>{jobsLoading && <div className="listing-note">Loading real job vacancies…</div>}{jobsError && <div className="listing-note"><CircleAlert size={16}/>{jobsError}<button className="soft-btn" onClick={()=>{setPage('Overview');setTimeout(()=>setPage('Find jobs'),0)}}>Try again</button></div>}<div className="job-grid">{filteredJobs.map(j=><article className="job-card" key={j.id}><div className="job-card-top"><div className={`company-logo ${j.tone}`}>{j.initials}</div><button className={`bookmark-btn ${saved.includes(j.id)?'saved':''}`} onClick={()=>setSaved(saved.includes(j.id)?saved.filter(x=>x!==j.id):[...saved,j.id])}><Bookmark size={17} fill={saved.includes(j.id)?'currentColor':'none'}/></button></div><span className="job-company">{j.company}</span><h3>{j.title}</h3><div className="job-meta"><span><MapPin size={14}/>{j.location}</span><span><Clock3 size={14}/>{j.type}</span></div><div className="job-tags"><span>{j.mode}</span><span>{j.salary}</span></div><p className="job-description">{j.description}</p><div className="job-card-foot"><button className="primary-btn small" onClick={()=>addApp(j)}><Plus size={15}/> Track job</button>{j.applyUrl && <a className="icon-btn outline" href={j.applyUrl} target="_blank" rel="noreferrer" title="Open original job posting" aria-label="Open original job posting"><ExternalLink size={16}/></a>}</div></article>)}</div>{!jobsLoading && !jobsError && filteredJobs.length===0&&<Empty title="No matching roles" text={jobs.length ? "Try another keyword." : "No listings were returned by the job source. Try again later."} action={()=>{setSearch('');setFilter('All')}} actionLabel="Reset search"/>}</>}
         {page === 'My applications' && <><PageTitle eyebrow="YOUR PIPELINE" title="My applications" subtitle="Every opportunity, organized in one calm workspace." action={<button className="primary-btn" onClick={()=>setShowAdd(true)}><Plus size={17}/> Add application</button>}/><div className="pipeline-strip">{['Saved','Applied','Assessment','Interview','Offer','Rejected'].map(s=><button className={`pipeline-chip ${filter===s?'selected':''}`} key={s} onClick={()=>setFilter(filter===s?'All':s)}>{s}<b>{apps.filter(a=>a.status===s).length}</b></button>)}</div><div className="panel table-panel"><div className="panel-head"><div><h2>All tracked applications</h2><p>{apps.length} opportunities in your pipeline</p></div><button className="soft-btn" onClick={()=>setFilter('All')}><Filter size={16}/> Reset filters</button></div><ApplicationTable apps={apps.filter(a=>filter==='All'||['Remote','Hybrid','On-site'].includes(filter)?(filter==='All'||a.location?.includes(filter)||a.status===filter):a.status===filter)} changeStatus={changeStatus} onDelete={id=>setApps(apps.filter(a=>a.id!==id))} full/></div></>}
         {page === 'Interviews' && <><PageTitle eyebrow="PREPARE WITH CONFIDENCE" title="Interview planner" subtitle="Keep dates, preparation notes, and next steps in one place."/><div className="interview-layout"><section className="panel"><div className="panel-head"><div><h2>Interview-stage applications</h2><p>Update a status in My applications to manage your pipeline.</p></div></div>{apps.filter(a=>a.status==='Interview').map(a=><div className="interview-card" key={a.id}><div className="company-logo lavender">{a.company[0]}</div><div className="interview-main"><b>{a.company}</b><span>{a.title}</span><small><CalendarDays size={13}/> Follow-up: {a.followUpDate||'Set a date in your notes'}</small></div><button className="soft-btn" onClick={()=>setNotice(`Preparation checklist: review the job description, practice Java fundamentals, Spring Boot, SQL, REST APIs, and prepare 2 project stories for ${a.company}.`)}>Prep checklist</button></div>)}{!apps.some(a=>a.status==='Interview')&&<Empty title="No interviews scheduled yet" text="When an application moves to Interview, you can prepare for it here." action={()=>openPage('My applications')} actionLabel="View applications"/>}</section><aside className="panel prep-panel"><div className="mini-icon"><Sparkles size={18}/></div><h2>Your interview warm-up</h2><p>Before each interview, spend a little time on:</p>{['Read the job description carefully','Practice Java and Spring Boot basics','Review one project end-to-end','Prepare thoughtful questions'].map(x=><div className="check-row" key={x}><CircleCheck size={16}/><span>{x}</span></div>)}</aside></div></>}
-        {page === 'Resume & ATS' && <><PageTitle eyebrow="READY FOR THE NEXT STEP" title="Resume readiness" subtitle="Compare resume text with a job description and find useful gaps."/><div className="resume-layout"><section className="panel resume-form"><div className="panel-head"><div><h2>Check your resume keywords</h2><p>Upload a text resume or paste your resume content below.</p></div><FileCheck2 size={21} color="#6759e8"/></div><label className="field-label">Upload resume (.txt, .md, .text)<input type="file" accept=".txt,.md,.text,text/plain,text/markdown" onChange={handleResumeFile} /></label><label className="field-label">Resume text<textarea value={resumeText} onChange={e=>setResumeText(e.target.value)} placeholder="Paste your resume text here — skills, projects, experience, education..." rows={8}/></label><label className="field-label">Target job description<textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows={5}/></label><button className="primary-btn" onClick={runAnalysis}><SearchCheck size={17}/> Analyze keywords</button><p className="disclaimer">This is a transparent keyword heuristic, not a real ATS score or hiring prediction. Only include skills you genuinely have.</p></section><section className="panel resume-result"><div className="panel-head"><div><h2>Analysis report</h2><p>Your results appear here after analysis.</p></div></div>{analysis?<><div className="score-row"><div className="score-circle" style={{'--score':`${analysis.score}%`}}><div><b>{analysis.score}</b><span>/ 100</span></div></div><div><b>Keyword overlap</b><p>{analysis.match.length} matching keyword(s) found.</p></div></div><h3 className="result-heading">Matched keywords</h3><div className="keyword-list">{analysis.match.length?analysis.match.map(x=><span className="keyword good" key={x}>{x}</span>):<span className="muted">No matches yet.</span>}</div><h3 className="result-heading">Skills to review</h3><div className="keyword-list">{analysis.missing.length?analysis.missing.map(x=><span className="keyword missing" key={x}>{x}</span>):<span className="muted">No missing tracked keywords.</span>}</div></>:<div className="result-empty"><div className="empty-illustration"><SearchCheck size={26}/></div><b>Your report will appear here</b><p>Add resume text and a target job description to see keyword overlap.</p></div>}</section></div></>}
+        {page === 'Resume & ATS' && <><PageTitle eyebrow="READY FOR THE NEXT STEP" title="Resume readiness" subtitle="Compare resume text with a job description and find useful gaps."/><div className="resume-layout"><section className="panel resume-form"><div className="panel-head"><div><h2>Check your resume keywords</h2><p>Upload a PDF or text resume, or paste your resume content below.</p></div><FileCheck2 size={21} color="#6759e8"/></div><label className="field-label">Upload resume (PDF, TXT, MD)<input type="file" accept=".pdf,application/pdf,.txt,.md,.text,text/plain,text/markdown" onChange={handleResumeFile} /></label><label className="field-label">Resume text<textarea value={resumeText} onChange={e=>setResumeText(e.target.value)} placeholder="Paste your resume text here — skills, projects, experience, education..." rows={8}/></label><label className="field-label">Target job description<textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows={5}/></label><button className="primary-btn" onClick={runAnalysis}><SearchCheck size={17}/> Analyze keywords</button><p className="disclaimer">This is a transparent keyword heuristic, not a real ATS score or hiring prediction. Only include skills you genuinely have.</p></section><section className="panel resume-result"><div className="panel-head"><div><h2>Analysis report</h2><p>Your results appear here after analysis.</p></div></div>{analysis?<><div className="score-row"><div className="score-circle" style={{'--score':`${analysis.score}%`}}><div><b>{analysis.score}</b><span>/ 100</span></div></div><div><b>Keyword overlap</b><p>{analysis.match.length} matching keyword(s) found.</p></div></div><h3 className="result-heading">Matched keywords</h3><div className="keyword-list">{analysis.match.length?analysis.match.map(x=><span className="keyword good" key={x}>{x}</span>):<span className="muted">No matches yet.</span>}</div><h3 className="result-heading">Skills to review</h3><div className="keyword-list">{analysis.missing.length?analysis.missing.map(x=><span className="keyword missing" key={x}>{x}</span>):<span className="muted">No missing tracked keywords.</span>}</div></>:<div className="result-empty"><div className="empty-illustration"><SearchCheck size={26}/></div><b>Your report will appear here</b><p>Add resume text and a target job description to see keyword overlap.</p></div>}</section></div></>}
         {page === 'Analytics' && <><PageTitle eyebrow="YOUR PROGRESS" title="Search insights" subtitle="Understand the activity you have recorded in Pathway."/><div className="stats-grid analytics-stats"><Stat icon={BriefcaseBusiness} label="Tracked jobs" value={stat.total} meta="All statuses" tone="violet"/><Stat icon={CalendarDays} label="Interviews" value={stat.interviews} meta="Interview stage" tone="blue"/><Stat icon={TrendingUp} label="Offers" value={stat.offers} meta="Offer stage" tone="green"/><Stat icon={ChartNoAxesCombined} label="Response activity" value={`${stat.response}%`} meta="Non-pending statuses" tone="peach"/></div><section className="panel analytics-panel"><div className="panel-head"><div><h2>Status breakdown</h2><p>Based on your current application records.</p></div></div>{['Saved','Applied','Assessment','Interview','Offer','Rejected','Withdrawn'].map(s=><div className="progress-row" key={s}><span>{s}</span><div className="progress-track"><div className={`progress-fill ${statusClass(s)}`} style={{width:`${apps.length?apps.filter(a=>a.status===s).length/apps.length*100:0}%`}}/></div><b>{apps.filter(a=>a.status===s).length}</b></div>)}</section></>}
         {page === 'Settings' && <><PageTitle eyebrow="YOUR WORKSPACE" title="Settings" subtitle="A few useful preferences for your personal job-search space."/><section className="panel settings-panel"><div className="settings-row"><div><b>Workspace profile</b><p>Personal workspace for Keerthana Vinoth</p></div><span className="period-pill">Personal</span></div><div className="settings-row"><div><b>Data & privacy</b><p>This prototype stores demo state in the current browser session only.</p></div><span className="soft-status">Demo mode</span></div><div className="settings-row"><div><b>Job source</b><p>Remote job listings are requested from the Pathway backend. Availability depends on the backend and its configured job source.</p></div><span className="soft-status">Backend source</span></div><div className="settings-row"><div><b>Application data</b><p>Clear local demo records and start fresh.</p></div><button className="soft-btn danger" onClick={()=>{setApps([]);setNotice('Demo application list cleared.')}}>Clear applications</button></div></section></>}
       </div>
