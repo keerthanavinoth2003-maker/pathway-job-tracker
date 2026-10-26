@@ -40,18 +40,32 @@ function App() {
 
   const [analysis, setAnalysis] = useState(null)
 
-  // Fetch real remote job listings when the Find jobs page is opened.
+  // Fetch jobs whenever Find Jobs opens or the search keyword changes.
   useEffect(() => {
     if (page !== 'Find jobs') return
+
     let cancelled = false
+
     async function loadJobs() {
       setJobsLoading(true)
       setJobsError('')
+
       try {
-        const response = await const params = new URLSearchParams({   worldwide: 'true',   page: '1', });  if (search.trim()) {   params.set('q', search.trim()); }  const response = await fetch(   `https://pathway-backend-t8al.onrender.com/api/jobs/remote?${params.toString()}` );
+        const params = new URLSearchParams({ worldwide: 'true', page: '1' })
+        if (search.trim()) params.set('q', search.trim())
+
+        const response = await fetch(
+          `https://pathway-backend-t8al.onrender.com/api/jobs/remote?${params.toString()}`
+        )
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
         const data = await response.json()
-        const rawJobs = Array.isArray(data) ? data : (data.jobs || [])
+        const rawJobs = Array.isArray(data)
+          ? data
+          : Array.isArray(data.jobs)
+            ? data.jobs
+            : []
+
         const palette = ['lavender', 'mint', 'blue', 'peach']
         const cleanText = value => String(value || '')
           .replace(/<[^>]*>/g, ' ')
@@ -59,52 +73,60 @@ function App() {
           .replace(/&amp;/g, '&')
           .replace(/\s+/g, ' ')
           .trim()
+
         const normalized = rawJobs.map((job, index) => {
+          const company = job.companyName || job.company || 'Company not listed'
+          const title = job.title || 'Role title not listed'
           const restrictions = Array.isArray(job.locationRestrictions)
             ? job.locationRestrictions.join(', ')
-            : (typeof job.locationRestrictions === 'string'
+            : typeof job.locationRestrictions === 'string'
               ? job.locationRestrictions
-              : job.locationRestrictions?.name || job.location || 'Remote; check eligibility')
+              : job.locationRestrictions?.name || job.location || 'Location not specified'
+
           const min = job.minSalary
           const max = job.maxSalary
           const salary = min || max
             ? `${job.currency || ''} ${min || ''}${min && max ? '–' : ''}${max || ''}${job.salaryPeriod ? ` / ${job.salaryPeriod}` : ''}`.trim()
             : 'Salary not listed'
+
           return {
-            id: job.guid || job.id || `${job.companyName || 'company'}-${job.title || index}-${index}`,
-            company: job.companyName || 'Company not listed',
-            title: job.title || 'Role title not listed',
+            id: job.guid || job.id || `${company}-${title}-${index}`,
+            company,
+            title,
             location: restrictions,
-            mode: 'Remote',
+            mode: job.workMode || job.mode || 'Not specified',
+            source: job.source || 'Unknown',
             salary,
             type: job.employmentType || 'Not specified',
-            initials: (job.companyName || 'J').slice(0, 1).toUpperCase(),
+            initials: company.slice(0, 1).toUpperCase(),
             tone: palette[index % palette.length],
             posted: job.pubDate ? new Date(job.pubDate).toLocaleDateString() : '',
             description: cleanText(job.excerpt || job.description || 'Open the original listing for full details.').slice(0, 420),
             applyUrl: job.applicationLink || job.url || '',
           }
-        }).filter(job => job.applyUrl && job.title)
+        }).filter(job => job.applyUrl && job.title !== 'Role title not listed')
+
         if (!cancelled) setJobs(normalized)
       } catch (error) {
         if (!cancelled) {
           setJobs([])
-          setJobsError('Could not load live jobs. Check your internet connection and try again.')
+          setJobsError('Could not load jobs. Please try again.')
         }
       } finally {
         if (!cancelled) setJobsLoading(false)
       }
     }
+
     loadJobs()
     return () => { cancelled = true }
-  }, [page])
+  }, [page, search])
   const nav = [
     { label: 'WORKSPACE', items: [{ name: 'Overview', icon: LayoutDashboard }, { name: 'Find jobs', icon: Search }, { name: 'My applications', icon: BriefcaseBusiness }, { name: 'Interviews', icon: CalendarDays }, { name: 'Resume & ATS', icon: FileCheck2 }] },
     { label: 'INSIGHTS', items: [{ name: 'Analytics', icon: ChartNoAxesCombined }, { name: 'Settings', icon: Settings }] }
   ]
   const filteredJobs = useMemo(() => jobs.filter(j => {
     const q = search.toLowerCase()
-    return (!q || `${j.title} ${j.company} ${j.location} ${j.description}`.toLowerCase().includes(q)) && (filter === 'All' || j.mode === filter)
+    return (!q || `${j.title} ${j.company} ${j.location} ${j.description}`.toLowerCase().includes(q)) && (filter === 'All' || j.mode.toLowerCase() === filter.toLowerCase())
   }), [jobs, search, filter])
   const stat = { total: apps.length, interviews: apps.filter(a => a.status === 'Interview').length, offers: apps.filter(a => a.status === 'Offer').length, response: apps.length ? Math.round(apps.filter(a => ['Interview','Offer','Rejected','Assessment'].includes(a.status)).length / apps.length * 100) : 0 }
   const addApp = (job) => {
@@ -270,7 +292,7 @@ function App() {
           </div>
           <section className="panel bottom-panel"><div className="panel-head"><div><h2>Your weekly rhythm</h2><p>A snapshot of the activity you have logged.</p></div><span className="period-pill">Last 7 days</span></div><div className="activity-chart">{['M','T','W','T','F','S','S'].map((d,i)=><div className="bar-column" key={i}><span className="bar-value">{[1,3,2,4,2,1,0][i]}</span><div className="bar-track"><div className={`bar-fill bar-${i}`} style={{height:`${[25,65,45,88,48,22,5][i]}%`}}/></div><span className="bar-day">{d}</span></div>)}</div><div className="chart-foot"><span><i className="legend-dot"/> Activity is illustrative until connected to live data.</span><button className="text-btn" onClick={() => openPage('Analytics')}>View insights <ArrowUpRight size={15}/></button></div></section>
         </>}
-        {page === 'Find jobs' && <><PageTitle eyebrow="OPPORTUNITIES" title="Find your next opportunity" subtitle="Search current remote vacancies from India and international employers."/><div className="search-tools"><div className="search-field"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Job title, company, or keyword"/></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option>All</option><option>Remote</option></select><button className="soft-btn" onClick={()=>{setSearch('');setFilter('All')}}><Filter size={16}/> Clear</button></div>{jobsLoading && <div className="listing-note">Loading real job vacancies…</div>}{jobsError && <div className="listing-note"><CircleAlert size={16}/>{jobsError}<button className="soft-btn" onClick={()=>{setPage('Overview');setTimeout(()=>setPage('Find jobs'),0)}}>Try again</button></div>}<div className="job-grid">{filteredJobs.map(j=><article className="job-card" key={j.id}><div className="job-card-top"><div className={`company-logo ${j.tone}`}>{j.initials}</div><button className={`bookmark-btn ${saved.includes(j.id)?'saved':''}`} onClick={()=>setSaved(saved.includes(j.id)?saved.filter(x=>x!==j.id):[...saved,j.id])}><Bookmark size={17} fill={saved.includes(j.id)?'currentColor':'none'}/></button></div><span className="job-company">{j.company}</span><h3>{j.title}</h3><div className="job-meta"><span><MapPin size={14}/>{j.location}</span><span><Clock3 size={14}/>{j.type}</span></div><div className="job-tags"><span>{j.mode}</span><span>{j.salary}</span></div><p className="job-description">{j.description}</p><div className="job-card-foot"><button className="primary-btn small" onClick={()=>addApp(j)}><Plus size={15}/> Track job</button>{j.applyUrl && <a className="icon-btn outline" href={j.applyUrl} target="_blank" rel="noreferrer" title="Open original job posting" aria-label="Open original job posting"><ExternalLink size={16}/></a>}</div></article>)}</div>{!jobsLoading && !jobsError && filteredJobs.length===0&&<Empty title="No matching roles" text={jobs.length ? "Try another keyword." : "No listings were returned by the job source. Try again later."} action={()=>{setSearch('');setFilter('All')}} actionLabel="Reset search"/>}</>}
+        {page === 'Find jobs' && <><PageTitle eyebrow="OPPORTUNITIES" title="Find your next opportunity" subtitle="Search current remote vacancies from India and international employers."/><div className="search-tools"><div className="search-field"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Job title, company, or keyword"/></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All work modes</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="On-site">On-site</option></select><button className="soft-btn" onClick={()=>{setSearch('');setFilter('All')}}><Filter size={16}/> Clear</button></div>{jobsLoading && <div className="listing-note">Loading real job vacancies…</div>}{jobsError && <div className="listing-note"><CircleAlert size={16}/>{jobsError}<button className="soft-btn" onClick={()=>{setPage('Overview');setTimeout(()=>setPage('Find jobs'),0)}}>Try again</button></div>}<div className="job-grid">{filteredJobs.map(j=><article className="job-card" key={j.id}><div className="job-card-top"><div className={`company-logo ${j.tone}`}>{j.initials}</div><button className={`bookmark-btn ${saved.includes(j.id)?'saved':''}`} onClick={()=>setSaved(saved.includes(j.id)?saved.filter(x=>x!==j.id):[...saved,j.id])}><Bookmark size={17} fill={saved.includes(j.id)?'currentColor':'none'}/></button></div><span className="job-company">{j.company}</span><h3>{j.title}</h3><div className="job-meta"><span><MapPin size={14}/>{j.location}</span><span><Clock3 size={14}/>{j.type}</span></div><div className="job-tags"><span>{j.mode}</span><span>{j.salary}</span></div><p className="job-description">{j.description}</p><div className="job-card-foot"><button className="primary-btn small" onClick={()=>addApp(j)}><Plus size={15}/> Track job</button>{j.applyUrl && <a className="icon-btn outline" href={j.applyUrl} target="_blank" rel="noreferrer" title="Open original job posting" aria-label="Open original job posting"><ExternalLink size={16}/></a>}</div></article>)}</div>{!jobsLoading && !jobsError && filteredJobs.length===0&&<Empty title="No matching roles" text={jobs.length ? "Try another keyword." : "No listings were returned by the job source. Try again later."} action={()=>{setSearch('');setFilter('All')}} actionLabel="Reset search"/>}</>}
         {page === 'My applications' && <><PageTitle eyebrow="YOUR PIPELINE" title="My applications" subtitle="Every opportunity, organized in one calm workspace." action={<button className="primary-btn" onClick={()=>setShowAdd(true)}><Plus size={17}/> Add application</button>}/><div className="pipeline-strip">{['Saved','Applied','Assessment','Interview','Offer','Rejected'].map(s=><button className={`pipeline-chip ${filter===s?'selected':''}`} key={s} onClick={()=>setFilter(filter===s?'All':s)}>{s}<b>{apps.filter(a=>a.status===s).length}</b></button>)}</div><div className="panel table-panel"><div className="panel-head"><div><h2>All tracked applications</h2><p>{apps.length} opportunities in your pipeline</p></div><button className="soft-btn" onClick={()=>setFilter('All')}><Filter size={16}/> Reset filters</button></div><ApplicationTable apps={apps.filter(a=>filter==='All'||['Remote','Hybrid','On-site'].includes(filter)?(filter==='All'||a.location?.includes(filter)||a.status===filter):a.status===filter)} changeStatus={changeStatus} onDelete={id=>setApps(apps.filter(a=>a.id!==id))} full/></div></>}
         {page === 'Interviews' && <><PageTitle eyebrow="PREPARE WITH CONFIDENCE" title="Interview planner" subtitle="Keep dates, preparation notes, and next steps in one place."/><div className="interview-layout"><section className="panel"><div className="panel-head"><div><h2>Interview-stage applications</h2><p>Update a status in My applications to manage your pipeline.</p></div></div>{apps.filter(a=>a.status==='Interview').map(a=><div className="interview-card" key={a.id}><div className="company-logo lavender">{a.company[0]}</div><div className="interview-main"><b>{a.company}</b><span>{a.title}</span><small><CalendarDays size={13}/> Follow-up: {a.followUpDate||'Set a date in your notes'}</small></div><button className="soft-btn" onClick={()=>setNotice(`Preparation checklist: review the job description, practice Java fundamentals, Spring Boot, SQL, REST APIs, and prepare 2 project stories for ${a.company}.`)}>Prep checklist</button></div>)}{!apps.some(a=>a.status==='Interview')&&<Empty title="No interviews scheduled yet" text="When an application moves to Interview, you can prepare for it here." action={()=>openPage('My applications')} actionLabel="View applications"/>}</section><aside className="panel prep-panel"><div className="mini-icon"><Sparkles size={18}/></div><h2>Your interview warm-up</h2><p>Before each interview, spend a little time on:</p>{['Read the job description carefully','Practice Java and Spring Boot basics','Review one project end-to-end','Prepare thoughtful questions'].map(x=><div className="check-row" key={x}><CircleCheck size={16}/><span>{x}</span></div>)}</aside></div></>}
         {page === 'Resume & ATS' && <><PageTitle eyebrow="READY FOR THE NEXT STEP" title="Resume readiness" subtitle="Compare resume text with a job description and find useful gaps."/><div className="resume-layout"><section className="panel resume-form"><div className="panel-head"><div><h2>Check your resume keywords</h2><p>Upload a PDF or text resume, or paste your resume content below.</p></div><FileCheck2 size={21} color="#6759e8"/></div><label className="field-label">Upload resume (PDF, TXT, MD)<input type="file" accept=".pdf,application/pdf,.txt,.md,.text,text/plain,text/markdown" onChange={handleResumeFile} /></label><label className="field-label">Resume text<textarea value={resumeText} onChange={e=>setResumeText(e.target.value)} placeholder="Paste your resume text here — skills, projects, experience, education..." rows={8}/></label><label className="field-label">Target job description<textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows={5}/></label><button className="primary-btn" onClick={runAnalysis}><SearchCheck size={17}/> Analyze keywords</button><p className="disclaimer">This is a transparent keyword heuristic, not a real ATS score or hiring prediction. Only include skills you genuinely have.</p></section><section className="panel resume-result"><div className="panel-head"><div><h2>Analysis report</h2><p>Your results appear here after analysis.</p></div></div>{analysis?<><div className="score-row"><div className="score-circle" style={{'--score':`${analysis.score}%`}}><div><b>{analysis.score}</b><span>/ 100</span></div></div><div><b>Keyword overlap</b><p>{analysis.match.length} matching keyword(s) found.</p></div></div><h3 className="result-heading">Matched keywords</h3><div className="keyword-list">{analysis.match.length?analysis.match.map(x=><span className="keyword good" key={x}>{x}</span>):<span className="muted">No matches yet.</span>}</div><h3 className="result-heading">Skills to review</h3><div className="keyword-list">{analysis.missing.length?analysis.missing.map(x=><span className="keyword missing" key={x}>{x}</span>):<span className="muted">No missing tracked keywords.</span>}</div></>:<div className="result-empty"><div className="empty-illustration"><SearchCheck size={26}/></div><b>Your report will appear here</b><p>Add resume text and a target job description to see keyword overlap.</p></div>}</section></div></>}
